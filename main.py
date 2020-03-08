@@ -154,7 +154,7 @@ def readin_imu():
     acceleration_overall += acceleration.z ** 2
     acceleration_overall = acceleration_overall ** 0.5
 
-    return gyro, acceleration.x, acceleration.y, acceleration.z, acceleration_overall
+    return gyro, acceleration_overall, acceleration.x, acceleration.y, acceleration.z
 
 '''输入摄像头读入的图像，输出目标距离摄像头的距离，目标方向和roll指向的夹角（偏右，偏上）'''
 def readin_sensor(img):
@@ -214,7 +214,11 @@ def check_launch():
 
 '''输入imu读入的数据，检查imu读入的数据是否在正常范围之内'''
 def check_imu_data(flydata):
-
+    flydata = readin_imu()
+    if ( flydata[1] <= 2 && flydata[2] <= 1 && flydata[3] <= 1 && flydata[4] <= 1):
+        if_imu_correct = True
+    else:
+        if_imu_correct = False
     return if_imu_correct
 
 '''输入图像，检查是否识别到目标'''
@@ -228,7 +232,21 @@ def check_target_found(img):
 
 '''检查图像中绿色色块的大小是否超过阈值'''
 def check_hit():
-
+    check_target_found(img)
+    if ( green_block_found == 1 ):
+        blobs = img.find_blobs([green_threshold])
+        area_total = 0.0
+        if blobs:
+            for b in blobs:
+                ROI = (b[0],b[1],b[2],b[3])
+                area = b[2] * b[3]
+                area_total += area
+        if ( area >= 1300 ):
+            ifhit = True
+        else:
+            ifhit = False
+    else:
+        ifhit = False
     return ifhit
 
 '''根据飞行数据计算servo转动参数'''
@@ -239,7 +257,10 @@ def calculate_kp():
 
 '''根据flydata计算稳定阶段servo应该转动以维持飞行平稳的角度'''
 def calculate_imu_change(flydata):
-
+    KP = calculate_kp()
+    s1_angle = -KP * flydata[4]
+    s2_angle = KP * flydata[4]
+    s3_angle = -KP * flydata[3]
     return s1_angle, s2_angle, s3_angle
 
 '''计算aim阶段servo应该转动以朝向目标的角度'''
