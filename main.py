@@ -22,11 +22,7 @@ KP = 1 #the value should be measured
 k_pitch = 1 #the value should be measured
 k_yaw = 1 #the value should be measured
 k_roll = 1 #the value should be measured
-'''
-in the whole program, define x-row, y-pitch, z-yaw.
-all positive direction are same.
-in case correction needed.
-'''
+
 '''
 def calculate_kp(flydata):
     kp = 1
@@ -119,19 +115,19 @@ def main():
     initialize_servo()
     return
 '''
-'''初始化舵机'''
+
 def initialize_servo():
     s1.angle(0)
     s2.angle(0)
     s3.angle(0)
     return
 
-'''初始化imu'''
+
 def initialize_imu():
     IMU.wake()
     return
 
-'''打开摄像头并初始化'''
+
 def initialize_sensor():
     sensor.reset()
     sensor.set_pixformat(sensor.RGB565)
@@ -141,10 +137,9 @@ def initialize_sensor():
     sensor.set_auto_whitebal(False)
     return
 
-'''读入imu数据，输出陀螺仪数据，roll，pitch，yaw方向加速度，总加速度'''
+
 def readin_imu():
     acceleration, gyro, mag = IMU.sensors()
-
 
     acceleration_overall = 0.0
     acceleration_overall += acceleration.x ** 2
@@ -152,9 +147,9 @@ def readin_imu():
     acceleration_overall += acceleration.z ** 2
     acceleration_overall = acceleration_overall ** 0.5
 
-    return gyro, acceleration.x, acceleration.y, acceleration.z, acceleration_overall
+    return gyro, acceleration_overall, acceleration.x, acceleration.y, acceleration.z
 
-'''输入摄像头读入的图像，输出目标距离摄像头的距离，目标方向和roll指向的夹角（偏右，偏上）'''
+
 def readin_sensor(img):
     blobs = img.find_blobs([green_threshold])
     area_total, x_pix, y_pix = (0.0, 0.0, 0.0)
@@ -182,23 +177,45 @@ def readin_sensor(img):
 
     return distance, angle
 
-'''检查是否到达发射前准备状态，是否转正'''
-def check_ready():
 
+def check_ready():
+    global last_y_accel=0
+    global last_z_accel=0
+    global last_state="stop"
+    flydata = readin_imu()
+    y_accel= flydata[2]
+    z_accel= flydata[3]
+    if (-0.05<y_accel<0.05 and -0.05<z_accel<0.05):#not orbiting, can be modified
+        if (last_y_accel<=0 and last_z_accel=>0 and last_state="move"):#check whether move to lunch position
+            ifready=True
+        else:
+            last_y_accel=0
+            last_z_accel=0
+            last_state="stop"
+            ifready=False
+    else:#orbiting
+        last_y_accel=y_accel
+        last_z_accel=z_accel
+        last_state="move"
+        ifready=False
     return ifready
 
-'''检查roll方向加速度是否大于0.5g '''
+
 def check_launch():
     flydata = readin_imu()
-    iflaunch = (flydata[1] > 0.5)
+    iflaunch = (flydata[1] < 0.5)
     return iflaunch
 
-'''输入imu读入的数据，检查imu读入的数据是否在正常范围之内'''
-def check_imu_data(flydata):
 
+def check_imu_data(flydata):
+    flydata = readin_imu()
+    if ( flydata[1] <= 2 && flydata[2] <= 1 && flydata[3] <= 1 && flydata[4] <= 1):
+        if_imu_correct = True
+    else:
+        if_imu_correct = False
     return if_imu_correct
 
-'''输入图像，检查是否识别到目标'''
+
 def check_target_found(img):
     blobs = img.find_blobs([green_threshold])
     if (len(blobs) >= 1):
@@ -207,23 +224,40 @@ def check_target_found(img):
         green_block_found = False
     return green_block_found
 
-'''检查图像中绿色色块的大小是否超过阈值'''
-def check_hit():
 
+def check_hit():
+    check_target_found(img)
+    if ( green_block_found == 1 ):
+        blobs = img.find_blobs([green_threshold])
+        area_total = 0.0
+        if blobs:
+            for b in blobs:
+                ROI = (b[0],b[1],b[2],b[3])
+                area = b[2] * b[3]
+                area_total += area
+        if ( area >= 1300 ):
+            ifhit = True
+        else:
+            ifhit = False
+    else:
+        ifhit = False
     return ifhit
 
-'''根据飞行数据计算servo转动参数'''
+
 def calculate_kp():
     flydata = readin_imu()
 
     return KP
 
-'''根据flydata计算稳定阶段servo应该转动以维持飞行平稳的角度'''
-def calculate_imu_change(flydata):
 
+def calculate_imu_change(flydata):
+    KP = calculate_kp()
+    s1_angle = -KP * flydata[4]
+    s2_angle = KP * flydata[4]
+    s3_angle = -KP * flydata[3]
     return s1_angle, s2_angle, s3_angle
 
-'''计算aim阶段servo应该转动以朝向目标的角度'''
+
 def calculate_camera_change(img):
     target_position = readin_sensor(img)
     differ = target_position[1]
@@ -231,27 +265,27 @@ def calculate_camera_change(img):
 
     #convert the angle between flight route and the target to the rotate
     #angle of the servos.
-    KP = calculate_kp()
+    KP = 10 * calculate_kp()
     s1_angle = KP * y_angle
     s2_angle = -KP * y_angle
-    s3_angle =  KP * x_angle
+    s3_angle = KP * x_angle
     return s1_angle, s2_angle, s3_angle
 
-'''aim阶段为维持飞行相对平稳修正servo转动角度'''
+
 def calculate_imu_adapt(s1_angle, s2_angle, s3_angle):
     flydata = readin_imu()
     if (check_imu_data(flydata)):
-
+    
     return s1_angle, s2_angle, s3_angle
 
-'''servo转动'''
+
 def act_servo(s1_angle, s2_angle, s3_angle):
     s1.angle(s1_angle)
     s2.angle(s2_angle)
     s3.angle(s3_angle)
     return
 
-'''关闭imu，舵机恢复原位'''
+
 def control_shutdown():
     IMU.sleep()
     initialize_servo()
@@ -261,13 +295,13 @@ def control_shutdown():
     '''
     return 0
 
-'''aim阶段 可以跳到stablize及shutdown'''
+
 def control_aim(img0):
     global time_found
     img = img0
     t2 = time.clock()
     while ( t2 - time_found < limit_found_to_hit ):
-        clock.tick(40)
+        clock.tick(50)
         s1_angle, s2_angle, s3_angle = calculate_camera_change(img)
         s1_angle, s2_angle, s3_angle = calculate_imu_adapt(s1_angle, s2_angle, s3_angle)
         act_servo(s1_angle, s2_angle, s3_angle)
@@ -276,19 +310,17 @@ def control_aim(img0):
         if (! iffound):
             i = 0
             while (i < 3) and (! iffound):
-                clock.tick(120)
                 i += 1
                 img = sensor.snapshot()
                 iffound = check_target_found(img)
             if (i == 3):
                 control_stablize() #check for 3 times
-        t2 = time.clock()
         if (check_hit()):
             break
     control_shutdown()
     return 0
 
-'''stablize阶段 可转到aim'''
+
 def control_stablize():
     global time_launch
     img = sensor.snapshot()
@@ -306,7 +338,7 @@ def control_stablize():
     control_aim(img)
     return 0
 
-'''检验是否发射阶段 可转到stablize ready'''
+
 def control_launch():
     global time_ready
     iflaunch = check_launch()
