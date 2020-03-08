@@ -22,6 +22,9 @@ KP = 1 #the value should be measured
 k_pitch = 1 #the value should be measured
 k_yaw = 1 #the value should be measured
 k_roll = 1 #the value should be measured
+last_y_accel=0
+last_z_accel=0
+last_state="stop"
 '''
 in the whole program, define x-row, y-pitch, z-yaw.
 all positive direction are same.
@@ -145,7 +148,6 @@ def initialize_sensor():
 def readin_imu():
     acceleration, gyro, mag = IMU.sensors()
 
-
     acceleration_overall = 0.0
     acceleration_overall += acceleration.x ** 2
     acceleration_overall += acceleration.y ** 2
@@ -184,8 +186,25 @@ def readin_sensor(img):
 
 '''检查是否到达发射前准备状态，是否转正'''
 def check_ready():
-
-    return ifready
+    flydata = readin_imu()
+    y_accel= flydata[2]
+    z_accel= flydata[3]
+    if (-0.05<y_accel<0.05 and -0.05<z_accel<0.05):#not orbiting, can be modified
+        if (last_y_accel<=0 and last_z_accel=>0 and last_state="move"):#check whether move to lunch position
+            ifready=True
+            return ifready
+        else:
+            last_y_accel=0
+            last_z_accel=0
+            last_state="stop"
+            ifready=False
+            return ifready
+    else:#orbiting
+        last_y_accel=y_accel
+        last_z_accel=z_accel
+        last_state="move"
+        ifready=False
+        return ifready
 
 '''检查roll方向加速度是否大于0.5g '''
 def check_launch():
